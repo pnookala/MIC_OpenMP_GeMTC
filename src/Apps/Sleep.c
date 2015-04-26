@@ -11,6 +11,7 @@
 #include <float.h>
 #include "omp.h"
 #include <sys/time.h>
+#include <pthread.h>
 
 void *GetResponse();
 
@@ -28,56 +29,42 @@ void Sleep(void *params, int num_threads)
 	int *sleepTime = (int *)params;
 	printf("Offloading to MIC... \n");
 
-gettimeofday(&startTime, NULL);
+	gettimeofday(&startTime, NULL);
 
 #pragma offload target(mic:MIC_DEV) \
-	 in(*sleepTime:length(sizeof(int))) signal(s2)
-{
-                int dummy = 1;
-                int threadId = omp_get_thread_num();
-        //      printf("ThreadID: %d \n", threadId);
+		in(*sleepTime:length(sizeof(int))) signal(s2)
+	{
+		int dummy = 1;
 
-                struct timeval tvBegin, tvEnd, tvDiff;
+		struct timeval tvBegin, tvEnd, tvDiff;
 
-                // begin
-                gettimeofday(&tvBegin, NULL);
+		// begin
+		gettimeofday(&tvBegin, NULL);
 
-                //printf("Start Time: ", tvBegin.tv_usec);
+		gettimeofday(&tvEnd, NULL);
 
-                gettimeofday(&tvEnd, NULL);
-                //printf("Start Time: ", tvBegin.tv_usec);
-                if (*sleepTime) {
+		if (*sleepTime) {
 
-                	while( (tvEnd.tv_usec - tvBegin.tv_usec) <  *sleepTime) {
-                                int i, j;
-                                for (i = 0; i < 10000; ++i) {
-                                        dummy *= 2;
-                                }
+			while( (tvEnd.tv_usec - tvBegin.tv_usec) <  *sleepTime) {
+				int i, j;
+				for (i = 0; i < 10000; ++i) {
+					dummy *= 2;
+				}
 
-                                gettimeofday(&tvEnd, NULL);
-                                //printf("Time Elapsed: %ld seconds, ThreadID: %d \n",((tvEnd.tv_usec - tvBegin.tv_usec) / 1000000 + (tvEnd.tv_sec - tvBegin.tv_sec)), threadId);
-                             	// printf( "Thread Num : %d, Sleep Duration (usec): %d, Execution Time: %ld, Theoritical Time: %ld\n", threadId, sleepTime, (tvEnd.tv_usec - tvBegin.tv_usec), sleepMicroSeconds);
-				// printf("Time Elapsed: %ld microseconds, ThreadID: %d \n",(tvEnd.tv_usec - tvBegin.tv_usec), threadId);
+				gettimeofday(&tvEnd, NULL);
 
 			}
+		}
 	}
-}
-//#pragma offload_wait target(mic:MIC_DEV) wait(s2)
-//gettimeofday(&endTime, NULL);
+	//Spawn a new thread to wait for the results from Xeon Phi
 	pthread_t bg = (pthread_t ) malloc(sizeof(pthread_t));
 	pthread_create(bg, NULL, GetResponse, NULL);
-
-//		printf( "Sleep Duration (usec): %d, Execution Time: %ld\n", *sleepTime, (endTime.tv_usec - startTime.tv_usec));
-                
-
-                //printf("End Time: ", tvEnd.tv_sec);
-	
 
 }
 
 void *GetResponse()
 {
-	#pragma offload_wait target(mic:MIC_DEV) wait(s2)
+#pragma offload_wait target(mic:MIC_DEV) wait(s2)
 	gettimeofday(&endTime, NULL);
 
 	printf( "Execution Time: %ld\n", (endTime.tv_usec - startTime.tv_usec));
