@@ -12,6 +12,11 @@
 #include "omp.h"
 #include <sys/time.h>
 
+void *GetResponse();
+
+struct timeval startTime, endTime, timeDifference;
+int s2;
+
 void Sleep(void *params, int num_threads)
 {
 	omp_set_num_threads(num_threads);
@@ -19,10 +24,14 @@ void Sleep(void *params, int num_threads)
 	printf("Starting Sleep Jobs\n");
 
 	int i;
+
 	int *sleepTime = (int *)params;
 	printf("Offloading to MIC... \n");
-//#pragma offload target(mic:MIC_DEV) \
-//	 in(*sleepTime:length(sizeof(int)))
+
+gettimeofday(&startTime, NULL);
+
+#pragma offload target(mic:MIC_DEV) \
+	 in(*sleepTime:length(sizeof(int))) signal(s2)
 {
                 int dummy = 1;
                 int threadId = omp_get_thread_num();
@@ -51,11 +60,25 @@ void Sleep(void *params, int num_threads)
 				// printf("Time Elapsed: %ld microseconds, ThreadID: %d \n",(tvEnd.tv_usec - tvBegin.tv_usec), threadId);
 
 			}
+	}
+}
+//#pragma offload_wait target(mic:MIC_DEV) wait(s2)
+//gettimeofday(&endTime, NULL);
+	pthread_t bg = (pthread_t ) malloc(sizeof(pthread_t));
+	pthread_create(bg, NULL, GetResponse, NULL);
 
-		printf( "Thread Num : %d, Sleep Duration (usec): %d, Execution Time: %ld, Theoritical Time: %ld\n", threadId, *sleepTime, tvEnd.tv_usec-tvBegin.tv_usec, *sleepTime);
-                }
+//		printf( "Sleep Duration (usec): %d, Execution Time: %ld\n", *sleepTime, (endTime.tv_usec - startTime.tv_usec));
+                
 
                 //printf("End Time: ", tvEnd.tv_sec);
-	}
+	
 
+}
+
+void *GetResponse()
+{
+	#pragma offload_wait target(mic:MIC_DEV) wait(s2)
+	gettimeofday(&endTime, NULL);
+
+	printf( "Execution Time: %ld\n", (endTime.tv_usec - startTime.tv_usec));
 }

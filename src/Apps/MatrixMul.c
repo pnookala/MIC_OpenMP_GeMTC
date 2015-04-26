@@ -11,6 +11,8 @@
 
 void MatrixMultiplication(int sqrtElements, int numThreads)
 {
+//#pragma offload_attribute (push, target (mic))
+
 	printf("Starting matrix multiplication with %d elements\n", sqrtElements);
 	omp_set_num_threads(numThreads);
 	
@@ -45,22 +47,27 @@ void MatrixMultiplication(int sqrtElements, int numThreads)
 //#pragma offload_transfer in(A,B,C) signal(A)
 //#pragma offload_wait(C)
 
-//#pragma offload target(mic) signal(C)
-#pragma omp parallel
-	{
 		/* warm up to overcome setup overhead */
-		printf("\tMatrixMult, Test run\n");
-		C = multiplyMatrices(A, B);
+	//	printf("\tMatrixMult, Test run\n");
+	//	C = multiplyMatrices(A, B);
 
 //		double totalTime=0, minTime = DBL_MAX, maxTime = 0.;
 		struct timeval tvBegin, tvEnd, tvDiff;
 		/*Run matrix multiplication numIterations times and calculate the average running time. */
 
 		int i;
-		for (i = 0; i < numIterations; i++) {
-			printf("\tMatrixMult, Starting iter: %d\n", i);
+	//	for (i = 0; i < numIterations; i++) {
+	//		printf("\tMatrixMult, Starting iter: %d\n", i);
+		int s1;
 			gettimeofday(&tvBegin, NULL);
+#pragma offload target(mic:MIC_DEV) in(A,B) out(C)  signal(s1)
+#pragma omp parallel
+{
 			C = multiplyMatrices(A, B);
+//			signalValue = 1;
+}
+#pragma offload_wait target(mic:MIC_DEV) wait(s1)
+
 			gettimeofday(&tvEnd, NULL);
 
 			double start =  tvBegin.tv_sec + ((double)tvBegin.tv_usec/1e6);
@@ -70,9 +77,7 @@ void MatrixMultiplication(int sqrtElements, int numThreads)
 			maxTime = (maxTime > diff) ? maxTime : diff;
 			minTime = (minTime < diff) ? minTime : diff;
 			totalTime += diff;
-		}
-	}
-//#pragma offload_wait(C)
+	//	}
 
 	printf("\tMatrixMult, Completed\n");
 	printf("Product (C):\n");
@@ -82,15 +87,15 @@ void MatrixMultiplication(int sqrtElements, int numThreads)
 	long ops = C->rows * C->cols * C->rows;
 	double gflops = (double)ops * (double)numIterations / ((double)(1e9) * aveTime);
 
-	printf( "MatrixMult, Summary, ");
-	//printf( "%d threads,", numThreads);
-	printf( "%d iterations,", numIterations);
-	printf( "%dx%d matrix,", C->rows, C->cols);
-	printf( "%g maxRT,", maxTime);
-	printf( "%g minRT,",minTime);
-	printf( "%g aveRT,", aveTime);
-	printf( "%g totalRT,", totalTime);
-	printf( "%d operations per iteration,", ops);
+	printf( "MatrixMult, Summary, \n");
+	//printf( "%d threads,\n", numThreads);
+	printf( "%d iterations,\n", numIterations);
+	printf( "%dx%d matrix,\n", C->rows, C->cols);
+	printf( "%g maxRT,\n", maxTime);
+	printf( "%g minRT,\n",minTime);
+	printf( "%g aveRT,\n", aveTime);
+	printf( "%g totalRT,\n", totalTime);
+	printf( "%d operations per iteration,\n", ops);
 	printf( "%g GFlop/s\n",gflops);
 
 
@@ -104,6 +109,7 @@ void MatrixMultiplication(int sqrtElements, int numThreads)
 
 	//__Offload_report(2);
 	return;
+//#pragma offload_attribute (pop)
 }
 
 matrix2d* multiplyMatrices(matrix2d* A, matrix2d* B) {
