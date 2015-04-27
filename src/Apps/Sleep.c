@@ -75,6 +75,7 @@ void *GetResponse(void *data)
 	printf("Value v: %d\n", value);
 #pragma offload_wait target(mic:MIC_DEV) wait(value)
 	printf("Signal received\n");
+	free(v);
 	gettimeofday(&endTime, NULL);
 	printf("End Time in seconds: %ld.%06ld\n", (long int)endTime.tv_sec, (long int)endTime.tv_usec);
 	printf("Start Time in seconds: %ld.%06ld\n", (long int)startTime.tv_sec, (long int)startTime.tv_usec);
