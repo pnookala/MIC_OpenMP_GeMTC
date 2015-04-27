@@ -1,7 +1,19 @@
-#include "GeMTC_API.h"
+#include <stdio.h>
 #include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/file.h>
+#include "mmap_common.h"
+#include "GeMTC_API.h"
 #include <assert.h>
 #include <sys/time.h>
+
+char *map_in, *map_out;
+int fin, fout;
 
 #define QUE_SZ  10
 #define WORKERS  2
@@ -9,42 +21,195 @@
 #define SLEEP_DURATION 5
 #define MATRIX_SIZE 8
 
+void reply(char* command, char* status)
+{
+	int c_len = strlen(command);
+	int s_len = strlen(status);
+	int write_len = c_len + s_len + 2;
+	char output[write_len+1];
+
+#ifdef VERBOSE
+	printf("c_len: %d\n", c_len);
+	printf("s_len: %d\n", s_len);
+	printf("write_len: %d\n", write_len);
+#endif
+
+	int p = 0;
+	memcpy(&output[p], command, c_len * sizeof(char));	p += c_len;
+	output[p++] = ';';
+	memcpy(&output[p], status, s_len * sizeof(char));	p += s_len;
+	sanitizeString(output);
+	output[p++] = '\n'; // newline here is important
+	output[p++] = 0;
+
+	flock(fout, LOCK_EX);
+	insert(map_out, bufferSize_out, output, write_len);
+	flock(fout, LOCK_UN);
+}
+
+char** str_split(char* a_str, const char a_delim)
+{
+    char** result    = 0;
+    size_t count     = 0;
+    char* tmp        = a_str;
+    char* last_comma = 0;
+    char delim[2];
+    delim[0] = a_delim;
+    delim[1] = 0;
+
+    /* Count how many elements will be extracted. */
+    while (*tmp)
+    {
+        if (a_delim == *tmp)
+        {
+            count++;
+            last_comma = tmp;
+        }
+        tmp++;
+    }
+
+    /* Add space for trailing token. */
+    count += last_comma < (a_str + strlen(a_str) - 1);
+
+    /* Add space for terminating null string so caller
+       knows where the list of returned strings ends. */
+    count++;
+
+    result = malloc(sizeof(char*) * count);
+
+    if (result)
+    {
+        size_t idx  = 0;
+        char* token = strtok(a_str, delim);
+
+        while (token)
+        {
+            assert(idx < count);
+            *(result + idx++) = strdup(token);
+            token = strtok(0, delim);
+        }
+        assert(idx == count - 1);
+        *(result + idx) = 0;
+    }
+
+    return result;
+}
+
+void run(char* command)
+{
+	printf("run command: \"%s\"\n", command);
+	char** params;
+	params = str_split(command, ' ');
+
+	if (params)
+	    {
+	        int i = 0;
+	        int task_id = 0;
+	        int task_type, num_threads;
+	        for (i = 0; *(params + i); i++)
+	        {
+	        	task_type = atoi(*(params + 1));
+	        	num_threads = atoi(*(params + 2));
+	        	unsigned int *input = malloc (sizeof(unsigned int));
+	        	*input = atoi(*(params + 3));
+	            printf("Pushing task onto queue, task_type = %d, num_threads = %d, input = %d\n", task_type,num_threads, *input);
+	            gemtc_push(task_type,num_threads, task_id, (void *)input);
+	        }
+	        printf("\n");
+	        //free(params);
+	    }
+
+	//Poll for results
+	int *id = (int *) malloc(sizeof(int));
+	void **p;
+
+	while(*id == NULL)
+	{
+		gemtc_poll(id, p);
+	}
+
+	reply(command, command);
+}
+
+
+
 int main(void)
 {
-	unsigned int *sleep_time = malloc (sizeof(unsigned int));
+	unsigned int *params = malloc (sizeof(unsigned int));
 	unsigned int *matrix_size = malloc (sizeof(unsigned int));
-
-	int *id = (int *) malloc(sizeof(int));
-	void *params;
-
-	*id = -1;
-	*sleep_time = SLEEP_DURATION;
-	*matrix_size = MATRIX_SIZE;
 
 	gemtc_setup(QUE_SZ, WORKERS);
 
-	//Create a thread to poll the results.
-		//pthread_create((pthread_t *) malloc(sizeof(pthread_t)), NULL, &gemtc_poll, (void *)params);
+	int i;
 
-		gemtc_push(1,0, TASK_ID, (void *)sleep_time);
-//		gemtc_push(1,1,1, (void *)sleep_time);
+		int filesize_in = bufferSize_in * sizeof(char);
+		int filesize_out = bufferSize_out * sizeof(char);
 
-//		sleep(5);
 
-		gemtc_poll(id, params);
+		fin = openFile(filePathIn, filesize_in, O_RDWR);
+		map_in = mapFile(fin, filesize_in, PROT_READ | PROT_WRITE);
 
-	int input;
-	scanf("%d", &input);
-	
-	while (input != 1){
-		sleep(1);
-		scanf("%d", &input);
-	}
-//	printf("%d\n", *id);
+		fout = openFile(filePathOut, filesize_out, O_RDWR);
+		map_out = mapFile(fout, filesize_out, PROT_READ | PROT_WRITE);
+
+
+		printf("starting loop\n");
+		while(1){
+			int len = strlen(map_in);
+			if(len > 0){
+				flock(fin, LOCK_EX);
+				len = strlen(map_in);
+
+				// When there's something in the buffer,
+				// start splitting by newline and then run()
+				// the resultant parts
+				char *sourceStr, *command, *saveptr1;
+				int j;
+				for (j = 1, sourceStr = map_in;; j++, sourceStr = NULL) {
+					command = strtok_r(sourceStr, "\n", &saveptr1);
+					if (command == NULL)
+					{
+						break;
+					}
+
+					sanitizeString(command);
+					printf("%d: %s\n", j, command);
+
+					run(command);
+				}
+
+				for(i = 0; i < len; i++)
+				{
+					map_in[i] = 0;
+				}
+				flock(fin, LOCK_UN);
+			}
+
+			usleep(10*1000);
+		}
+
+		/* Don't forget to free the mmap_inped memory
+		 */
+	#ifdef VERBOSE
+		printf("unmap_inping memory\n");
+	#endif
+		if (munmap(map_in, filesize_in) == -1) {
+			perror("Error un-mmap_inping the file");
+		}
+
+		if (munmap(map_out, filesize_out) == -1) {
+			perror("Error un-mmap_inping the file");
+		}
+
+		/* Un-mmap_ining doesn't close the file, so we still need to do that.
+		 */
+	#ifdef VERBOSE
+		printf("closing: %s\n", FILEPATH);
+	#endif
+		close(fin);
+		close(fout);
 
 	gemtc_cleanup();
-	free(sleep_time);
-	free(id);
 
 	return(0);
 }

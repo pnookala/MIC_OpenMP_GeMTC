@@ -69,8 +69,6 @@ void gemtc_poll(int *id, void **params)
 
 	task = dequeue(mps->results);
 
-	assert(task != NULL);
-
 	/* pass the pointers with the results */
 	*id = task->task_id;
 	params = task->params;
