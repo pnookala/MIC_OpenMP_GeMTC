@@ -9,8 +9,8 @@
 // Performs a naive multiplication of A * B (which is O(n^3)).
 // If A and B are N x M and M x P respectively, the result will be an N x P matrix
 // nb: N x M signifies a matrix with N rows and M columns
-void *GetResponse();
-matrix2d *A, *B, *C;
+void *GetMMResponse();
+__attribute__ ((target(mic))) matrix2d *A, *B, *C;
 double totalTime=0, minTime = 0., maxTime = 0.;
 struct timeval tvBegin, tvEnd, tvDiff;
 int i,s1;
@@ -51,13 +51,13 @@ void MatrixMultiplication(int sqrtElements, int numThreads)
 	}
 	//Spawn a new thread to wait for the results from Xeon Phi
 	pthread_t bg = (pthread_t ) malloc(sizeof(pthread_t));
-	pthread_create(bg, NULL, GetResponse, NULL);
+	pthread_create(bg, NULL, GetMMResponse, NULL);
 
 
 }
 
 
-void *GetResponse()
+void *GetMMResponse()
 {
 #pragma offload_wait target(mic:MIC_DEV) wait(s1)
 	gettimeofday(&tvEnd, NULL);
@@ -75,20 +75,20 @@ void *GetResponse()
 	printf("Product (C):\n");
 	printMatrix(C, 'd');
 
-	double aveTime = totalTime / numIterations;
+	//	double aveTime = totalTime / numIterations;
 	long ops = C->rows * C->cols * C->rows;
-	double gflops = (double)ops * (double)numIterations / ((double)(1e9) * aveTime);
+	//	double gflops = (double)ops * (double)numIterations / ((double)(1e9) * aveTime);
 
 	printf( "MatrixMult, Summary, \n");
 	//printf( "%d threads,\n", numThreads);
-	printf( "%d iterations,\n", numIterations);
+	//printf( "%d iterations,\n", numIterations);
 	printf( "%dx%d matrix,\n", C->rows, C->cols);
 	printf( "%g maxRT,\n", maxTime);
 	printf( "%g minRT,\n",minTime);
-	printf( "%g aveRT,\n", aveTime);
+	//printf( "%g aveRT,\n", aveTime);
 	printf( "%g totalRT,\n", totalTime);
-	printf( "%d operations per iteration,\n", ops);
-	printf( "%g GFlop/s\n",gflops);
+	//printf( "%d operations per iteration,\n", ops);
+	//printf( "%g GFlop/s\n",gflops);
 
 
 	deleteMatrix(A);

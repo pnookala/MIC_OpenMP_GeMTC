@@ -1,12 +1,12 @@
 ### Basic Makefile for OpenMP
 
 # Offload mode execution
-# CC = icc -Wall -openmp -fPIC -wd2568
+ CC = icc -Wall -openmp -fPIC -wd2568
 # Native Phi Execution
 # CC = icc -mmic -g -Wall -openmp -fPIC  -L /opt/intel/lib/mic -Wno-unknown-pragmas -liomp5
 # Using GCC
-CC = gcc -fopenmp
-CFLAGS = -g
+# CC = gcc -fopenmp
+CFLAGS = -g -w
 LDFLAGS =
 
 MIC_OpenMP: MIC_OpenMP.o

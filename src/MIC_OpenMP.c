@@ -6,7 +6,7 @@
 #define QUE_SZ  10
 #define WORKERS  2
 #define TASK_ID  0
-#define SLEEP_DURATION 30000
+#define SLEEP_DURATION 5
 #define MATRIX_SIZE 8
 
 int main(void)
@@ -27,13 +27,21 @@ int main(void)
 		//pthread_create((pthread_t *) malloc(sizeof(pthread_t)), NULL, &gemtc_poll, (void *)params);
 
 		gemtc_push(1,0, TASK_ID, (void *)sleep_time);
-		gemtc_push(2,1,1, (void *)matrix_size);
+//		gemtc_push(1,1,1, (void *)sleep_time);
 
-		sleep(1);
+//		sleep(5);
 
 		gemtc_poll(id, params);
-	printf("%d\n", *id);
-	sleep(20);	
+
+	int input;
+	scanf("%d", &input);
+	
+	while (input != 1){
+		sleep(1);
+		scanf("%d", &input);
+	}
+//	printf("%d\n", *id);
+
 	gemtc_cleanup();
 	free(sleep_time);
 	free(id);
