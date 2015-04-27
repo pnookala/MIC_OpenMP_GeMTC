@@ -14,8 +14,9 @@
 
 char *map_in, *map_out;
 int fin, fout;
+int task_id = 0;
 
-#define QUE_SZ  10
+#define QUE_SZ  1000
 #define WORKERS  2
 #define TASK_ID  0
 #define SLEEP_DURATION 5
@@ -104,31 +105,45 @@ void run(char* command)
 	if (params)
 	    {
 	        int i = 0;
-	        int task_id = 0;
 	        int task_type, num_threads;
-	        for (i = 0; *(params + i); i++)
-	        {
+printf("%d\n",atoi(*(params+1)));
+		if(params + 1)
+		{
 	        	task_type = atoi(*(params + 1));
+		}
+//		else break;
+		if(params + 2)
+		{
 	        	num_threads = atoi(*(params + 2));
-	        	unsigned int *input = malloc (sizeof(unsigned int));
+		}
+//		else break;
+		int *input = malloc (sizeof(int));
+		if(params + 3)
+		{
 	        	*input = atoi(*(params + 3));
-	            printf("Pushing task onto queue, task_type = %d, num_threads = %d, input = %d\n", task_type,num_threads, *input);
-	            gemtc_push(task_type,num_threads, task_id, (void *)input);
-	        }
+		}
+	printf("Input %d\n",*input);
+//		else break;
+//		if(task_id > 0)
+//		{
+			task_id++;
+	        	printf("Pushing task onto queue, task_type = %d, num_threads = %d, input = %d\n", task_type,num_threads, *input);
+	        	gemtc_push(task_type,num_threads, task_id, (void *)input);
+//	        }
 	        printf("\n");
 	        //free(params);
 	    }
 
 	//Poll for results
-	int *id = (int *) malloc(sizeof(int));
-	void **p;
+	//int *id = (int *) malloc(sizeof(int));
+	//void **p;
 
-	while(*id == NULL)
-	{
-		gemtc_poll(id, p);
-	}
+	//while(*id == NULL)
+	//{
+	//	gemtc_poll(id, p);
+	//}
 
-	reply(command, command);
+//	reply(command, command);
 }
 
 

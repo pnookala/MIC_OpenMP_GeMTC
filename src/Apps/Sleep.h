@@ -11,7 +11,7 @@
 #define MIC_DEV 0
 #endif
 
-__attribute__ ((target(mic))) void Sleep(void *params, int num_threads);
-//void Sleep(void *sleepTime, int num_threads);
+__attribute__ ((target(mic))) void Sleep(void *params, int num_threads, int task_id);
+//void Sleep(void *sleepTime, int num_threads, int task_id);
 
 #endif
