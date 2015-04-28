@@ -9,12 +9,19 @@
 // Performs a naive multiplication of A * B (which is O(n^3)).
 // If A and B are N x M and M x P respectively, the result will be an N x P matrix
 // nb: N x M signifies a matrix with N rows and M columns
+
 void *GetMMResponse();
-__attribute__ ((target(mic))) matrix2d *A, *B, *C;
+
 double totalTime=0, minTime = 0., maxTime = 0.;
 struct timeval tvBegin, tvEnd, tvDiff;
-int i,s1;
+int i, s1;
 
+__attribute__ ((target(mic))) basetype *A, *B, *C;
+__attribute__ ((target(mic))) int
+	a_rows, a_cols,
+	b_rows, b_cols,
+	c_rows, c_cols;
+	
 void MatrixMultiplication(int sqrtElements, int numThreads)
 {
 
@@ -27,39 +34,103 @@ void MatrixMultiplication(int sqrtElements, int numThreads)
 	}
 
 	printf("\tMatrixMult, Creating matrices with dimmension %dx%d\n", dimA, dimB);
-
-	A = createMatrix(dimA, dimB);
-	B = createMatrix(dimB, dimA);
-	C = createMatrix(dimA, dimB);
+	a_rows = dimA;
+	a_cols = dimB;
+	b_rows = dimB;
+	b_cols = dimA;
+	
+	
+	A = createMatrix(a_rows, a_cols);
+	B = createMatrix(b_rows, b_cols);
+	//C = createMatrix(dimA, dimB);
 
 	printf("\tMatrixMult, Randomizing source matrices\n");
-	randomizeMatrix(A);
-	randomizeMatrix(B);
+	randomizeMatrix(A, a_rows, a_cols);
+	randomizeMatrix(B, b_rows, b_cols);
 
 	printf("Matrix A:\n");
-	printMatrix(A, 'd');
+	printMatrix(A, a_rows, a_cols, 'd');
 	printf("Matrix B:\n");
-	printMatrix(B, 'd');
-
-	printf("\tMatrixMult, Initializing MIC\n");
+	printMatrix(B, b_rows, b_cols, 'd');
 
 	gettimeofday(&tvBegin, NULL);
-#pragma offload target(mic:MIC_DEV) in(A,B) out(C)  signal(s1)
-#pragma omp parallel
-	{
-		C = multiplyMatrices(A, B);
-	}
+	printf("\tMatrixMult, start\n");
+
+//#pragma offload target(mic:MIC_DEV) in(A, B, a_rows, a_cols, b_rows, b_cols) out(C) signal(s1)
+//#pragma omp parallel
+//	{
+		C = multiplyMatrices(A, B, a_rows, a_cols, b_rows, &c_rows, &c_cols);
+//	}
+	
 	//Spawn a new thread to wait for the results from Xeon Phi
 	pthread_t bg = (pthread_t ) malloc(sizeof(pthread_t));
 	pthread_create(bg, NULL, GetMMResponse, NULL);
-
-
+	
 }
 
+// c_rows and c_cols are outputs, call as multiplyMatrices(... , &c_rows, &c_cols);
+// If A and B are N x M and M x P respectively, the result will be an N x P matrix
+basetype* multiplyMatrices(basetype* A, basetype* B, int a_rows, int a_cols, int b_cols, int* c_rows, int* c_cols)
+{
+	*c_rows = a_rows;
+	*c_cols = b_cols;
+	
+	printf("\tMatrixMult, allocating C\n");
+	basetype* C;
+	//posix_memalign((void**)&C, 64, sizeof(matrix2d));
+	C = createMatrix(a_rows, b_cols);
+
+	int rows = a_rows;
+	int m = a_cols; // m is the "inner" and common dimension between A and B
+	int cols = b_cols;
+	
+	printf("\tMatrixMult, Initializing MIC\n");
+#pragma offload target(mic:MIC_DEV) in(*A, *B, a_rows, a_cols, b_rows, b_cols) out(*C) signal(s1)
+#pragma omp parallel
+	{
+//#pragma omp single
+//		{
+		int r = 0;
+		for (; r < rows; r++) {
+			// Initialize matrix columns
+			int c = 0;
+			for (; c < cols; c++) {
+				basetype item = 0;
+				// Determine product of A's row and B's col
+				int i = 0;
+				for (; i < m; i++) {
+					//item += A->data[r][i] * B->data[i][c];
+					item += A[(r * a_cols) + i] * B[(i * b_cols) + c];
+					
+					//int v = A[(r * a_cols) + i] * B[(i * b_cols) + c];
+					//printf("\tA[%d, %d] * B[%d, %d] = %d * %d = %d\n", r, i, i, c, A[(r * a_cols) + i], B[(i * b_cols) + c], v);
+				}
+				// Assign to matrix
+				//C->data[r][c] = item;
+				C[(r * cols) + c] = item;
+				
+				//printf("\t\tC[%d, %d]: %d\n", r, c, item);
+			}
+		}
+//		}
+	}
+	
+	//printf("Matrix C:\n");
+	//printMatrix(C, *c_rows, *c_cols, 'c');
+	//printMatrix(C, *c_rows, *c_cols, 'd');
+	
+	
+//#pragma offload target(mic:MIC_DEV) in(*C) signal(s1)
+//	{
+//	}
+	
+	return C;
+}
 
 void *GetMMResponse()
 {
 #pragma offload_wait target(mic:MIC_DEV) wait(s1)
+
 	gettimeofday(&tvEnd, NULL);
 
 	double start =  tvBegin.tv_sec + ((double)tvBegin.tv_usec/1e6);
@@ -69,20 +140,19 @@ void *GetMMResponse()
 	maxTime = (maxTime > diff) ? maxTime : diff;
 	minTime = (minTime < diff) ? minTime : diff;
 	totalTime += diff;
-	//	}
 
 	printf("\tMatrixMult, Completed\n");
 	printf("Product (C):\n");
-	printMatrix(C, 'd');
+	printMatrix(C, c_rows, c_cols, 'd');
 
 	//	double aveTime = totalTime / numIterations;
-	long ops = C->rows * C->cols * C->rows;
+	long ops = c_rows * c_cols * c_rows;
 	//	double gflops = (double)ops * (double)numIterations / ((double)(1e9) * aveTime);
 
 	printf( "MatrixMult, Summary, \n");
 	//printf( "%d threads,\n", numThreads);
 	//printf( "%d iterations,\n", numIterations);
-	printf( "%dx%d matrix,\n", C->rows, C->cols);
+	printf( "%dx%d matrix,\n", c_rows, c_cols);
 	printf( "%g maxRT,\n", maxTime);
 	printf( "%g minRT,\n",minTime);
 	//printf( "%g aveRT,\n", aveTime);
@@ -94,70 +164,17 @@ void *GetMMResponse()
 	deleteMatrix(A);
 	deleteMatrix(B);
 	deleteMatrix(C);
-
-	//free(A);
-	//free(B);
-	//free(C);
-
+	printf("returning\n");
 }
 
-matrix2d* multiplyMatrices(matrix2d* A, matrix2d* B) {
-	/*if(A->cols != B->rows){
-		 return NULL;
-		 }*/
-
-	matrix2d* C;
-	//C = malloc(sizeof(matrix2d));
-	posix_memalign((void**)&C, 64, sizeof(matrix2d));
-
-	int rows = A->rows;
-	int m = A->cols;
-	int cols = B->cols;
-	//	int colsPadded = ( cols%8 == 0 ? cols : cols + (8-cols%8) );
-	//	int rowsPadded = ( rows%8 == 0 ? rows : rows + (8-rows%8) );
-
-	//C->data = malloc(sizeof(basetype*) * rows);
-	posix_memalign((void**)&(C->data), 64, sizeof(basetype*) * rows);
-
-#pragma offload target(mic:MIC_DEV) in(A,B) out(C)
-#pragma omp parallel
-	{
-
-		// Initialize matrix rows
-		C->rows = rows;
-		C->cols = cols;
-		//#pragma vector aligned
-		//#pragma ivdep
-
-		int r = 0;
-		for (; r < rows; r++) {
-			// Initialize matrix columns
-			//C->data[r] = malloc(sizeof(basetype) * cols);
-			posix_memalign((void**)&(C->data[r]), 64, sizeof(basetype) * cols);
-			int c = 0;
-			for (; c < cols; c++) {
-				basetype item = 0;
-				// Determine product of A's row and B's col
-				int i = 0;
-				for (; i < A->cols; i++) {
-					item += A->data[r][i] * B->data[i][c];
-				}
-				// Assign to matrix
-				C->data[r][c] = item;
-			}
-		}
-	}
-
-	return C;
-}
-
-matrix2d* loadMatrixFile(char* file) {
+basetype* loadMatrixFile(char* file) {
+	/*
 	FILE *fp;
 	fp = fopen(file, "r");
 
 	// Initialize matrix
 	matrix2d* final;
-	//	final = malloc(sizeof(matrix2d));
+//	final = malloc(sizeof(matrix2d));
 	posix_memalign((void**)&final, 64, sizeof(matrix2d));
 
 	if (fp == NULL) {
@@ -172,8 +189,8 @@ matrix2d* loadMatrixFile(char* file) {
 		// Initialize matrix rows
 		final->rows = rows;
 		final->cols = cols;
-		//	final->data = malloc(sizeof(basetype*) * rows);
-		posix_memalign((void**)&(final->data), 64, sizeof(basetype*) * rows);
+	//	final->data = malloc(sizeof(basetype*) * rows);
+		posix_memalign((void**)&(final->data), 64, sizeof(basetype*) * rows); 
 
 		int r = 0;
 		int c = 0;
@@ -207,56 +224,41 @@ matrix2d* loadMatrixFile(char* file) {
 
 	fclose(fp);
 	return final;
+	*/
+	return 0;
 }
 
-matrix2d* createMatrix(int rows, int cols) {
-	//matrix2d* final = malloc(sizeof(matrix2d));
-	matrix2d* final;
-	posix_memalign((void**)&final, 64, sizeof(matrix2d));
-	final->rows = rows;
-	final->cols = cols;
-	//final->data = malloc(sizeof(basetype*) * rows);
-	posix_memalign((void**)&(final->data), 64, sizeof(basetype*) * rows);
-	int r = 0;
-
-#pragma omp parallel
-
-	for (; r < rows; r++) {
-		//final->data[r] = malloc(sizeof(basetype) * cols);
-		posix_memalign((void**)&(final->data[r]), 64, sizeof(basetype) * cols);
-		// done initializing here, this is just to clear everything to 0
-		int c = 0;
-		for (; c < cols; c++) {
-			final->data[r][c] = 0;
-		}
-	}
-
+basetype* createMatrix(int rows, int cols) {
+	basetype* final;
+	//posix_memalign((void**)&final, 64, sizeof(matrix2d));
+	final = malloc(rows * cols * sizeof(basetype));
+	
 	return final;
 }
 
-void randomizeMatrix(matrix2d* mat) {
-
+void randomizeMatrix(basetype* mat, int rows, int cols) {
 	int r = 0;
-	for (; r < mat->rows; r++) {
+	for (; r < rows; r++) {
 		int c = 0;
-		for (; c < mat->cols; c++) {
-			mat->data[r][c] = rand() % 100;
+		for (; c < cols; c++) {
+			//mat->data[r][c] = rand() % 100;
+			mat[(r * cols) + c] = rand() % 4;
 		}
 	}
 }
 
-void printMatrix_simple(matrix2d* mat) {
+void printMatrix_simple(basetype* mat, int rows, int cols) {
 	int maxRows = 20;
 	int maxCols = 10;
 	int r = 0;
 	int c = 0;
-
+	
 	if (!mat) {
 		printf("<null>\n\n");
 		return;
 	}
-
-	for (; c < mat->cols; c++) {
+	
+	for (; c < cols; c++) {
 		printf("\t[%d]", c);
 		if(c >= maxCols){
 			break;
@@ -264,9 +266,9 @@ void printMatrix_simple(matrix2d* mat) {
 	}
 	printf("\n");
 
-	for (; r < mat->rows; r++) {
+	for (; r < rows; r++) {
 		printf("[%d]", r);
-		for (c = 0; c < mat->cols; c++) {
+		for (c = 0; c < cols; c++) {
 			if (c >= maxCols) {
 				if(r >= maxRows) {
 					printf("\t...");
@@ -277,76 +279,64 @@ void printMatrix_simple(matrix2d* mat) {
 			} else if(r >= maxRows) {
 				printf("\t...");
 			} else {
-				printf("\t%d", mat->data[r][c]);
+				//printf("\t%d", mat->data[r][c]);
+				printf("\t%d", mat[(r * cols) + c]);
 			}
 		}
 
 		if (r == 0) {
-			printf("\t%d x %d", mat->rows, mat->cols);
+			printf("\t%d x %d", rows, cols);
 		} else if (r == 1) {
-			printf("\t(%d elements)", mat->rows * mat->cols);
+			printf("\t(%d elements)", rows * cols);
 		}
 		printf("\n");
-
+		
 		if (r >= maxRows) {
 			break;
 		}
 	}
 	printf("\n");
+	
 }
 
-void printMatrix_compact(matrix2d* mat) {
+void printMatrix_compact(basetype* mat, int rows, int cols) {
 	printf("{");
 	int r = 0;
-	for (; r < mat->rows; r++) {
+	for (; r < rows; r++) {
 		if (r > 0) {
 			printf(",");
 		}
 		printf("{");
 		int c = 0;
-		for (; c < mat->cols; c++) {
+		for (; c < cols; c++) {
 			if (c > 0) {
 				printf(",");
 			}
-			printf("%d", mat->data[r][c]);
+			//printf("%d", mat->data[r][c]);
+			printf("%d", mat[(r * cols) + c]);
 		}
 		printf("}");
 	}
 	printf("}\n");
 }
 
-void printMatrix(matrix2d* mat, char format) {
+void printMatrix(basetype* mat, int rows, int cols, char format) {
 	if (!mat) {
 		printf("<null>\n\n");
 		return;
 	}
 
 	if (format == 'c') {
-		printMatrix_compact(mat);
+		printMatrix_compact(mat, rows, cols);
 	} else {
-		printMatrix_simple(mat);
+		printMatrix_simple(mat, rows, cols);
 	}
 }
 
-void deleteMatrix(matrix2d* mat) {
+void deleteMatrix(basetype* mat) {
 	if (!mat)
 		return;
 
-	//printMatrix(mat);
-	//printf("Freeing matrix\n");
-	int r = 0;
-
-	for (; r < mat->rows; r++) {
-		//printf("\t[%d]/%d\n", r, mat->rows);
-		if (mat->data[r]) {
-			free(mat->data[r]);
-		} else {
-			//printf("was null\n");
-		}
-	}
-	//printf("\tmat->data\n");
-	free(mat->data);
-	//printf("\tmat\n");
+	printf("Freeing matrix 0x%08x\n", mat);	
 	free(mat);
-
 }
