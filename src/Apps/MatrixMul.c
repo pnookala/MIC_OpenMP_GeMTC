@@ -49,8 +49,10 @@ void MatrixMultiplication(int sqrtElements, int numThreads)
 	randomizeMatrix(B, b_rows, b_cols);
 
 	printf("Matrix A:\n");
+	//printMatrix(A, a_rows, a_cols, 'c');
 	printMatrix(A, a_rows, a_cols, 'd');
 	printf("Matrix B:\n");
+	//printMatrix(B, b_rows, b_cols, 'c');
 	printMatrix(B, b_rows, b_cols, 'd');
 
 	gettimeofday(&tvBegin, NULL);
@@ -143,6 +145,7 @@ void *GetMMResponse()
 
 	printf("\tMatrixMult, Completed\n");
 	printf("Product (C):\n");
+	//printMatrix(C, c_rows, c_cols, 'c');
 	printMatrix(C, c_rows, c_cols, 'd');
 
 	//	double aveTime = totalTime / numIterations;
