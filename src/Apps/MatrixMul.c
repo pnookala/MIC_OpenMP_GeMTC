@@ -10,24 +10,29 @@
 // If A and B are N x M and M x P respectively, the result will be an N x P matrix
 // nb: N x M signifies a matrix with N rows and M columns
 
-void *GetMMResponse();
+void *GetMMResponse(void *data);
 
 double totalTime=0, minTime = 0., maxTime = 0.;
 struct timeval tvBegin, tvEnd, tvDiff;
-int i, s1;
+int i;
 
-__attribute__ ((target(mic))) basetype *A, *B, *C;
+/*__attribute__ ((target(mic))) basetype *A, *B, *C;*/
 __attribute__ ((target(mic))) int
 	a_rows, a_cols,
 	b_rows, b_cols,
 	c_rows, c_cols;
-	
-void MatrixMultiplication(int sqrtElements, int numThreads)
-{
 
+basetype *A, *B, *C;
+/*int     a_rows, a_cols,
+        b_rows, b_cols,
+        c_rows, c_cols;
+*/	
+void MatrixMultiplication(int sqrtElements, int numThreads, int task_id)
+{
+	
 	printf("Starting matrix multiplication with %d elements\n", sqrtElements);
 	omp_set_num_threads(numThreads);
-
+	
 	int dimA = 8, dimB = 8; //Size should be a multiple of 8 to avoid segmentation fault error on Xeon Phi
 	if(sqrtElements>0){
 		dimA = dimB = sqrtElements;
@@ -61,18 +66,18 @@ void MatrixMultiplication(int sqrtElements, int numThreads)
 //#pragma offload target(mic:MIC_DEV) in(A, B, a_rows, a_cols, b_rows, b_cols) out(C) signal(s1)
 //#pragma omp parallel
 //	{
-		C = multiplyMatrices(A, B, a_rows, a_cols, b_rows, &c_rows, &c_cols);
+		C = multiplyMatrices(A, B, a_rows, a_cols, b_rows, &c_rows, &c_cols, task_id);
 //	}
 	
 	//Spawn a new thread to wait for the results from Xeon Phi
-	pthread_t bg = (pthread_t ) malloc(sizeof(pthread_t));
-	pthread_create(bg, NULL, GetMMResponse, NULL);
+//	pthread_t bg = (pthread_t ) malloc(sizeof(pthread_t));
+//	pthread_create(bg, NULL, GetMMResponse, NULL);
 	
 }
 
 // c_rows and c_cols are outputs, call as multiplyMatrices(... , &c_rows, &c_cols);
 // If A and B are N x M and M x P respectively, the result will be an N x P matrix
-basetype* multiplyMatrices(basetype* A, basetype* B, int a_rows, int a_cols, int b_cols, int* c_rows, int* c_cols)
+basetype* multiplyMatrices(basetype* A, basetype* B, int a_rows, int a_cols, int b_cols, int* c_rows, int* c_cols, int task_id)
 {
 	*c_rows = a_rows;
 	*c_cols = b_cols;
@@ -85,9 +90,15 @@ basetype* multiplyMatrices(basetype* A, basetype* B, int a_rows, int a_cols, int
 	int rows = a_rows;
 	int m = a_cols; // m is the "inner" and common dimension between A and B
 	int cols = b_cols;
-	
+	int s1 = task_id;
+//#pragma offload_transfer target(mic:MIC_DEV) in(A,B : length(sizeof(int)*a_rows*a_cols))
+
 	printf("\tMatrixMult, Initializing MIC\n");
-#pragma offload target(mic:MIC_DEV) in(*A, *B, a_rows, a_cols, b_rows, b_cols) out(*C) signal(s1)
+	 gettimeofday(&tvBegin, NULL);
+#pragma offload target(mic:MIC_DEV) \
+	in(a_rows,a_cols,b_rows,b_cols,m,rows,cols) \
+	 in(A,B) \
+	 inout(C) signal(s1)
 #pragma omp parallel
 	{
 //#pragma omp single
@@ -97,7 +108,7 @@ basetype* multiplyMatrices(basetype* A, basetype* B, int a_rows, int a_cols, int
 			// Initialize matrix columns
 			int c = 0;
 			for (; c < cols; c++) {
-				basetype item = 0;
+				int item = 0;
 				// Determine product of A's row and B's col
 				int i = 0;
 				for (; i < m; i++) {
@@ -117,21 +128,27 @@ basetype* multiplyMatrices(basetype* A, basetype* B, int a_rows, int a_cols, int
 //		}
 	}
 	
-	//printf("Matrix C:\n");
-	//printMatrix(C, *c_rows, *c_cols, 'c');
-	//printMatrix(C, *c_rows, *c_cols, 'd');
+//	printf("Matrix C:\n");
+//	printMatrix(C, *c_rows, *c_cols, 'c');
+//	printMatrix(C, *c_rows, *c_cols, 'd');
 	
-	
-//#pragma offload target(mic:MIC_DEV) in(*C) signal(s1)
-//	{
-//	}
+	//Spawn a new thread to wait for the results from Xeon Phi
+	int *localCopy = (int*)malloc(sizeof(int));
+	*localCopy = s1;
+	printf("Local copy: %d\n",*localCopy);
+	pthread_t bg = (pthread_t ) malloc(sizeof(pthread_t));
+	pthread_create(bg, NULL, GetMMResponse, (void *)localCopy);
 	
 	return C;
 }
 
-void *GetMMResponse()
+void *GetMMResponse(void *data)
 {
-#pragma offload_wait target(mic:MIC_DEV) wait(s1)
+	printf("Waiting for signal\n");
+	int *v = (int *)data;
+	int value = *v;
+	printf("Value v: %d\n", value);
+#pragma offload_wait target(mic:MIC_DEV) wait(value)
 
 	gettimeofday(&tvEnd, NULL);
 
@@ -139,14 +156,14 @@ void *GetMMResponse()
 	double end = tvEnd.tv_sec + ((double)tvEnd.tv_usec/1e6);
 	double diff = end - start;
 
-	maxTime = (maxTime > diff) ? maxTime : diff;
-	minTime = (minTime < diff) ? minTime : diff;
-	totalTime += diff;
+	//maxTime = (maxTime > diff) ? maxTime : diff;
+	//minTime = (minTime < diff) ? minTime : diff;
+	//totalTime += diff;
 
 	printf("\tMatrixMult, Completed\n");
 	printf("Product (C):\n");
 	//printMatrix(C, c_rows, c_cols, 'c');
-	printMatrix(C, c_rows, c_cols, 'd');
+	printMatrix(C, a_rows, b_cols, 'd');
 
 	//	double aveTime = totalTime / numIterations;
 	long ops = c_rows * c_cols * c_rows;
@@ -156,17 +173,17 @@ void *GetMMResponse()
 	//printf( "%d threads,\n", numThreads);
 	//printf( "%d iterations,\n", numIterations);
 	printf( "%dx%d matrix,\n", c_rows, c_cols);
-	printf( "%g maxRT,\n", maxTime);
-	printf( "%g minRT,\n",minTime);
+	printf( "Execution Time = %g,\n", diff);
+	//printf( "%g minRT,\n",minTime);
 	//printf( "%g aveRT,\n", aveTime);
-	printf( "%g totalRT,\n", totalTime);
+	//printf( "%g totalRT,\n", totalTime);
 	//printf( "%d operations per iteration,\n", ops);
 	//printf( "%g GFlop/s\n",gflops);
 
 
-	deleteMatrix(A);
-	deleteMatrix(B);
-	deleteMatrix(C);
+//	deleteMatrix(A);
+//	deleteMatrix(B);
+//	deleteMatrix(C);
 	printf("returning\n");
 }
 

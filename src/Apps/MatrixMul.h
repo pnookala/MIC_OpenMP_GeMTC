@@ -1,5 +1,4 @@
-/*
- * MatrixMul.h
+/* MatrixMul.h
  *
  *  Created on: Apr 8, 2015
  *      Author: pnookala
@@ -21,12 +20,12 @@ __attribute__ ((target(mic))) 	basetype* loadMatrixFile(char* file);
 __attribute__ ((target(mic))) 	basetype* createMatrix(int rows, int cols);
 __attribute__ ((target(mic))) 	void randomizeMatrix(basetype* mat, int rows, int cols);
 
-__attribute__ ((target(mic))) 	basetype* multiplyMatrices(basetype* A, basetype* B, int a_rows, int a_cols, int b_cols, int* c_rows, int* c_cols);
+__attribute__ ((target(mic))) 	basetype* multiplyMatrices(basetype* A, basetype* B, int a_rows, int a_cols, int b_cols, int* c_rows, int* c_cols, int task_id);
 //__attribute__ ((target(mic))) 	basetype* multiplyMatrices(basetype* A, basetype* B, int a_rows, int a_cols, int b_cols);
 
 __attribute__ ((target(mic))) 	void printMatrix(basetype* mat, int rows, int cols, char format);
 __attribute__ ((target(mic))) 	void deleteMatrix(basetype* mat);
 __attribute__ ((target(mic)))	void printMatrix_compact(basetype* mat, int rows, int cols);
 __attribute__ ((target(mic)))	void printMatrix_simple(basetype* mat, int rows, int cols);
-__attribute__ ((target(mic)))	void MatrixMultiplication(int sqrtElements, int numThreads);
+__attribute__ ((target(mic)))	void MatrixMultiplication(int sqrtElements, int numThreads, int task_id);
 

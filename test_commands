@@ -1,5 +1,2 @@
-sleep 1 1 5
-sleep 1 1 3
-sleep 1 1 3
-sleep 1 1 2
-sleep 1 1 1
+mm 2 240 64
+mm 2 240 64

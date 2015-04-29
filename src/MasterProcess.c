@@ -13,7 +13,7 @@ struct task_desc *execute_task(struct task_desc *task)
 	case 2:
 	{
 		int* size = (int *)task->params;
-		MatrixMultiplication(*size, task->num_threads);
+		MatrixMultiplication(*size, task->num_threads, task->task_id);
 		break;
 	}
 	default:

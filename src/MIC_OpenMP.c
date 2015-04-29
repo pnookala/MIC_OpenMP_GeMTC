@@ -17,7 +17,7 @@ int fin, fout;
 int task_id = 0;
 
 #define QUE_SZ  1000
-#define WORKERS  2
+#define WORKERS  1
 #define TASK_ID  0
 #define SLEEP_DURATION 5
 #define MATRIX_SIZE 8
@@ -121,15 +121,20 @@ printf("%d\n",atoi(*(params+1)));
 		if(params + 3)
 		{
 	        	*input = atoi(*(params + 3));
+			printf("Sleep Input: %ld\n", *input);
 		}
 	printf("Input %d\n",*input);
 //		else break;
 //		if(task_id > 0)
 //		{
+		int count;
+		for(count = 0;count<1;count++)
+		{
 			task_id++;
 	        	printf("Pushing task onto queue, task_type = %d, num_threads = %d, input = %d\n", task_type,num_threads, *input);
 	        	gemtc_push(task_type,num_threads, task_id, (void *)input);
 //	        }
+		}
 	        printf("\n");
 	        //free(params);
 	    }

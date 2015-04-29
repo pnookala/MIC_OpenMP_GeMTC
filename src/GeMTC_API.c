@@ -24,11 +24,11 @@ void gemtc_setup(int queue_size, int workers)
 	mps->kill_master = kill_master;
 	mps->workers = workers;
 	//mps->worker_threads = (pthread_t *) malloc(sizeof(pthread_t) * workers);
-	mps->worker_threads = (pthread_t *) malloc(sizeof(pthread_t));
+	mps->worker_threads = (pthread_t *) malloc(sizeof(pthread_t) * workers);
 
-	//int t;
-	//for (t = 0; t < workers; t++)
-		pthread_create(&mps->worker_threads[0], NULL, worker_handler, (void *)mps);
+	int t;
+	for (t = 0; t < workers; t++)
+		pthread_create(&mps->worker_threads[t], NULL, worker_handler, (void *)mps);
 
 
 }
