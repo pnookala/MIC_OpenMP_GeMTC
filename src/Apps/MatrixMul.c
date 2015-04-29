@@ -112,6 +112,8 @@ basetype* multiplyMatrices(basetype* A, basetype* B, int a_rows, int a_cols, int
 				int item = 0;
 				// Determine product of A's row and B's col
 				int i = 0;
+				 #pragma vector aligned 
+            			#pragma ivdep 
 				for (; i < m; i++) {
 					//item += A->data[r][i] * B->data[i][c];
 					item += A[(r * a_cols) + i] * B[(i * b_cols) + c];
