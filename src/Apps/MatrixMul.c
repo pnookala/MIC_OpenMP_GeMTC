@@ -95,10 +95,11 @@ basetype* multiplyMatrices(basetype* A, basetype* B, int a_rows, int a_cols, int
 
 	printf("\tMatrixMult, Initializing MIC\n");
 	 gettimeofday(&tvBegin, NULL);
-#pragma offload target(mic:MIC_DEV) \
+//#pragma offload target(mic:MIC_DEV) \
 	in(a_rows,a_cols,b_rows,b_cols,m,rows,cols) \
 	 in(A,B) \
 	 inout(C) signal(s1)
+#pragma offload target(mic:MIC_DEV) in(A : length(a_rows*a_cols) align(4)) in(B : length(b_rows*b_cols) align(4)) out(C : length(a_rows*b_cols) align(4)) in(a_rows, a_cols, b_rows, b_cols,m,rows,cols) signal(s1)
 #pragma omp parallel
 	{
 //#pragma omp single
