@@ -167,7 +167,6 @@ int main(int argc, char *argv[])
 	}
 	else
 	{
-		printf("Expected a file name or a command\n");
 		printf("Client in read-only mode\n");
 
 		watchOutput();

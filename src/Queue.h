@@ -9,6 +9,8 @@ struct task_desc {
 	int task_type;
 	int num_threads;
 	void *params;
+	double startTime;
+	char signal;
 };
 
 struct queue {

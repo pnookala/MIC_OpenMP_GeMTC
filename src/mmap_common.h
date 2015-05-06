@@ -14,8 +14,8 @@
 
 char* filePathIn = "/tmp/mic_openmp_shmem_in.bin";
 char* filePathOut = "/tmp/mic_openmp_shmem_out.bin";
-int bufferSize_in = 1000;
-int bufferSize_out = 2000;
+int bufferSize_in = 10000;
+int bufferSize_out = 20000;
 
 #define FILEMODE (0600)
 

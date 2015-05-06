@@ -17,13 +17,16 @@ int fin, fout;
 int task_id = 0;
 
 #define QUE_SZ  1000
-#define WORKERS  1
+#define WORKERS  2
 #define TASK_ID  0
 #define SLEEP_DURATION 5
 #define MATRIX_SIZE 8
 
 void reply(char* command, char* status)
 {
+#ifdef VERBOSE
+	printf("Reply:\t%s;%s\n", command, status);
+#endif
 	int c_len = strlen(command);
 	int s_len = strlen(status);
 	int write_len = c_len + s_len + 2;
@@ -98,57 +101,43 @@ char** str_split(char* a_str, const char a_delim)
 
 void run(char* command)
 {
+//#ifdef VERBOSE
 	printf("run command: \"%s\"\n", command);
+//#endif
 	char** params;
 	params = str_split(command, ' ');
 
 	if (params)
-	    {
-	        int i = 0;
-	        int task_type, num_threads;
-printf("%d\n",atoi(*(params+1)));
+	{
+		int i = 0;
+		int task_type, num_threads;
 		if(params + 1)
 		{
-	        	task_type = atoi(*(params + 1));
+			task_type = atoi(*(params + 1));
 		}
-//		else break;
 		if(params + 2)
 		{
-	        	num_threads = atoi(*(params + 2));
+			num_threads = atoi(*(params + 2));
 		}
-//		else break;
 		int *input = malloc (sizeof(int));
 		if(params + 3)
 		{
-	        	*input = atoi(*(params + 3));
-			printf("Sleep Input: %ld\n", *input);
+			*input = atoi(*(params + 3));
 		}
-	printf("Input %d\n",*input);
-//		else break;
-//		if(task_id > 0)
-//		{
-		int count;
-		for(count = 0;count<1;count++)
-		{
-			task_id++;
-	        	printf("Pushing task onto queue, task_type = %d, num_threads = %d, input = %d\n", task_type,num_threads, *input);
-	        	gemtc_push(task_type,num_threads, task_id, (void *)input);
-//	        }
-		}
-	        printf("\n");
-	        //free(params);
-	    }
+		//printf("Input %d\n",*input);
+		
+		task_id++;
+#ifdef VERBOSE
+		printf("Pushing task onto queue, task_type = %d, num_threads = %d, input = %d\n", task_type, num_threads, *input);
+#endif
 
-	//Poll for results
-	//int *id = (int *) malloc(sizeof(int));
-	//void **p;
+		gemtc_push(task_type, num_threads, task_id, (void *)input);
+		
+#ifdef VERBOSE
+		printf("\n");
+#endif
+	}
 
-	//while(*id == NULL)
-	//{
-	//	gemtc_poll(id, p);
-	//}
-
-//	reply(command, command);
 }
 
 
@@ -173,7 +162,7 @@ int main(void)
 		map_out = mapFile(fout, filesize_out, PROT_READ | PROT_WRITE);
 
 
-		printf("starting loop\n");
+		printf("checking for incoming tasks\n");
 		while(1){
 			int len = strlen(map_in);
 			if(len > 0){
@@ -193,8 +182,9 @@ int main(void)
 					}
 
 					sanitizeString(command);
+#ifdef VERBOSE
 					printf("%d: %s\n", j, command);
-
+#endif
 					run(command);
 				}
 
@@ -223,9 +213,6 @@ int main(void)
 
 		/* Un-mmap_ining doesn't close the file, so we still need to do that.
 		 */
-	#ifdef VERBOSE
-		printf("closing: %s\n", FILEPATH);
-	#endif
 		close(fin);
 		close(fout);
 

@@ -10,35 +10,41 @@
 // If A and B are N x M and M x P respectively, the result will be an N x P matrix
 // nb: N x M signifies a matrix with N rows and M columns
 
-void *GetMMResponse(void *data);
+//void *GetMMResponse();
 
-double totalTime=0, minTime = 0., maxTime = 0.;
-struct timeval tvBegin, tvEnd, tvDiff;
-int i;
+//double totalTime=0, minTime = 0., maxTime = 0.;
+//struct timeval tvBegin, tvEnd, tvDiff;
+//int i, s1;
 
-/*__attribute__ ((target(mic))) basetype *A, *B, *C;*/
+#ifdef OFFLOAD
+__attribute__ ((target(mic))) basetype *A, *B, *C;
 __attribute__ ((target(mic))) int
 	a_rows, a_cols,
 	b_rows, b_cols,
 	c_rows, c_cols;
-
+#else
 basetype *A, *B, *C;
-/*int     a_rows, a_cols,
-        b_rows, b_cols,
-        c_rows, c_cols;
-*/	
-void MatrixMultiplication(int sqrtElements, int numThreads, int task_id)
-{
+int
+	a_rows, a_cols,
+	b_rows, b_cols,
+	c_rows, c_cols;
+#endif
 	
-	printf("Starting matrix multiplication with %d elements\n", sqrtElements);
-	omp_set_num_threads(numThreads);
+void MatrixMultiplication(int sqrtElements, int numThreads)
+{
+	//printf("Matrix Multiplication:\n");
+	//printf("\tThreads:  %d\n", numThreads);
+	//printf("\tElements: %d\n", sqrtElements);
+
+	// This does actually work with the correct "#pragma omp parallel for" below
+	 omp_set_num_threads(numThreads);
 	
 	int dimA = 8, dimB = 8; //Size should be a multiple of 8 to avoid segmentation fault error on Xeon Phi
 	if(sqrtElements>0){
 		dimA = dimB = sqrtElements;
 	}
 
-	printf("\tMatrixMult, Creating matrices with dimmension %dx%d\n", dimA, dimB);
+	//printf("\tMatrixMult, Creating matrices with dimmension %dx%d\n", dimA, dimB);
 	a_rows = dimA;
 	a_cols = dimB;
 	b_rows = dimB;
@@ -49,27 +55,24 @@ void MatrixMultiplication(int sqrtElements, int numThreads, int task_id)
 	B = createMatrix(b_rows, b_cols);
 	//C = createMatrix(dimA, dimB);
 
-	printf("\tMatrixMult, Randomizing source matrices\n");
+	//printf("\tMatrixMult, Randomizing source matrices\n");
 	randomizeMatrix(A, a_rows, a_cols);
 	randomizeMatrix(B, b_rows, b_cols);
 
-	printf("Matrix A:\n");
-	//printMatrix(A, a_rows, a_cols, 'c');
-	printMatrix(A, a_rows, a_cols, 'd');
-	printf("Matrix B:\n");
-	//printMatrix(B, b_rows, b_cols, 'c');
-	printMatrix(B, b_rows, b_cols, 'd');
-
-	gettimeofday(&tvBegin, NULL);
-	printf("\tMatrixMult, start\n");
+	//printf("Matrix A:\n");
+	////printMatrix(A, a_rows, a_cols, 'c');
+	//printMatrix(A, a_rows, a_cols, 'd');
+	//printf("Matrix B:\n");
+	////printMatrix(B, b_rows, b_cols, 'c');
+	//printMatrix(B, b_rows, b_cols, 'd');
 
 //#pragma offload target(mic:MIC_DEV) in(A, B, a_rows, a_cols, b_rows, b_cols) out(C) signal(s1)
 //#pragma omp parallel
 //	{
-		C = multiplyMatrices(A, B, a_rows, a_cols, b_rows, &c_rows, &c_cols, task_id);
+		C = multiplyMatrices(A, B, a_rows, a_cols, b_rows, &c_rows, &c_cols);
 //	}
 	
-	//Spawn a new thread to wait for the results from Xeon Phi
+//	//Spawn a new thread to wait for the results from Xeon Phi
 //	pthread_t bg = (pthread_t ) malloc(sizeof(pthread_t));
 //	pthread_create(bg, NULL, GetMMResponse, NULL);
 	
@@ -77,12 +80,12 @@ void MatrixMultiplication(int sqrtElements, int numThreads, int task_id)
 
 // c_rows and c_cols are outputs, call as multiplyMatrices(... , &c_rows, &c_cols);
 // If A and B are N x M and M x P respectively, the result will be an N x P matrix
-basetype* multiplyMatrices(basetype* A, basetype* B, int a_rows, int a_cols, int b_cols, int* c_rows, int* c_cols, int task_id)
+basetype* multiplyMatrices(basetype* A, basetype* B, int a_rows, int a_cols, int b_cols, int* c_rows, int* c_cols)
 {
 	*c_rows = a_rows;
 	*c_cols = b_cols;
 	
-	printf("\tMatrixMult, allocating C\n");
+	//printf("\tMatrixMult, allocating C\n");
 	basetype* C;
 	//posix_memalign((void**)&C, 64, sizeof(matrix2d));
 	C = createMatrix(a_rows, b_cols);
@@ -90,68 +93,71 @@ basetype* multiplyMatrices(basetype* A, basetype* B, int a_rows, int a_cols, int
 	int rows = a_rows;
 	int m = a_cols; // m is the "inner" and common dimension between A and B
 	int cols = b_cols;
-	int s1 = task_id;
-//#pragma offload_transfer target(mic:MIC_DEV) in(A,B : length(sizeof(int)*a_rows*a_cols))
+	
+	//printf("A[%d, %d]\n", a_rows, a_cols);
+	//printf("B[%d, %d]\n", b_rows, b_cols);
+	//printf("C[%d, %d]\n", *c_rows, *c_cols);
+	//printf("A: %x\t&A: %x\n", A, &A);
+	//printf("B: %x\t&B: %x\n", B, &B);
+	//printf("C: %x\t&C: %x\n", C, &C);
+	//fflush(0);
+	
+	//printf("\tMatrixMult, Initializing MIC\n");
+//#pragma offload target(mic:MIC_DEV) in(A, B, a_rows, a_cols, b_rows, b_cols) out(C) signal(s1)
+//#pragma offload target(mic:MIC_DEV) in(A : length(a_rows*a_cols) align(4)) in(B : length(b_rows*b_cols) align(4)) out(C : length(a_rows*b_cols) align(4)) in(a_rows, a_cols, b_rows, b_cols) signal(s1) 
 
-	printf("\tMatrixMult, Initializing MIC\n");
-	 gettimeofday(&tvBegin, NULL);
-//#pragma offload target(mic:MIC_DEV) \
-	in(a_rows,a_cols,b_rows,b_cols,m,rows,cols) \
-	 in(A,B) \
-	 inout(C) signal(s1)
-#pragma offload target(mic:MIC_DEV) in(A : length(a_rows*a_cols) align(4)) in(B : length(b_rows*b_cols) align(4)) out(C : length(a_rows*b_cols) align(4)) in(a_rows, a_cols, b_rows, b_cols,m,rows,cols) signal(s1)
-#pragma omp parallel
 	{
-//#pragma omp single
-//		{
-		int r = 0;
-		for (; r < rows; r++) {
-			// Initialize matrix columns
-			int c = 0;
-			for (; c < cols; c++) {
-				int item = 0;
-				// Determine product of A's row and B's col
-				int i = 0;
-				 #pragma vector aligned 
-            			#pragma ivdep 
-				for (; i < m; i++) {
-					//item += A->data[r][i] * B->data[i][c];
-					item += A[(r * a_cols) + i] * B[(i * b_cols) + c];
-					
-					//int v = A[(r * a_cols) + i] * B[(i * b_cols) + c];
-					//printf("\tA[%d, %d] * B[%d, %d] = %d * %d = %d\n", r, i, i, c, A[(r * a_cols) + i], B[(i * b_cols) + c], v);
-				}
-				// Assign to matrix
-				//C->data[r][c] = item;
-				C[(r * cols) + c] = item;
+			int r = 0;
+			// Keep this pragma to control the number of threads per MMult. Must also retain "r = 0" in loop initializer
+			#pragma omp parallel for
+			for (r = 0; r < rows; r++) {
 				
-				//printf("\t\tC[%d, %d]: %d\n", r, c, item);
+				//if(r < 64){
+				//	printf("thread: %d/%d\n", omp_get_thread_num(), omp_get_num_threads());
+				//	
+				//}
+				
+				// Initialize matrix columns
+				int c = 0;
+				for (; c < cols; c++) {
+					basetype item = 0;
+					// Determine product of A's row and B's col
+					int i = 0;
+					#pragma vector aligned 
+						#pragma ivdep 
+					for (; i < m; i++) {
+						//item += A->data[r][i] * B->data[i][c];
+						item += A[(r * a_cols) + i] * B[(i * b_cols) + c];
+						
+						//int v = A[(r * a_cols) + i] * B[(i * b_cols) + c];
+						//printf("\tA[%d, %d] * B[%d, %d] = %d * %d = %d\n", r, i, i, c, A[(r * a_cols) + i], B[(i * b_cols) + c], v);
+					}
+					// Assign to matrix
+					C[(r * cols) + c] = item;
+					
+					//printf("\t\tC[%d, %d]: %d\n", r, c, item);
+				}
 			}
-		}
 //		}
+			//int i;
+			//for(i=0; i<a_rows * b_cols; i++){
+			//	C[i] = i;
+			//}
 	}
 	
-//	printf("Matrix C:\n");
-//	printMatrix(C, *c_rows, *c_cols, 'c');
-//	printMatrix(C, *c_rows, *c_cols, 'd');
-	
-	//Spawn a new thread to wait for the results from Xeon Phi
-	int *localCopy = (int*)malloc(sizeof(int));
-	*localCopy = s1;
-	printf("Local copy: %d\n",*localCopy);
-	pthread_t bg = (pthread_t ) malloc(sizeof(pthread_t));
-	pthread_create(bg, NULL, GetMMResponse, (void *)localCopy);
-	
+	//printf("Matrix C:\n");
+	////printMatrix(C, *c_rows, *c_cols, 'c');
+	//printMatrix(C, *c_rows, *c_cols, 'd');
+	//fflush(0);
+		
 	return C;
 }
 
-void *GetMMResponse(void *data)
+/*
+void *GetMMResponse()
 {
-	printf("Waiting for signal\n");
-	int *v = (int *)data;
-	int value = *v;
-	printf("Value v: %d\n", value);
-#pragma offload_wait target(mic:MIC_DEV) wait(value)
+	
+#pragma offload_wait target(mic:MIC_DEV) wait(s1)
 
 	gettimeofday(&tvEnd, NULL);
 
@@ -159,14 +165,14 @@ void *GetMMResponse(void *data)
 	double end = tvEnd.tv_sec + ((double)tvEnd.tv_usec/1e6);
 	double diff = end - start;
 
-	//maxTime = (maxTime > diff) ? maxTime : diff;
-	//minTime = (minTime < diff) ? minTime : diff;
-	//totalTime += diff;
+	maxTime = (maxTime > diff) ? maxTime : diff;
+	minTime = (minTime < diff) ? minTime : diff;
+	totalTime += diff;
 
 	printf("\tMatrixMult, Completed\n");
-	printf("Product (C):\n");
-	//printMatrix(C, c_rows, c_cols, 'c');
-	printMatrix(C, a_rows, b_cols, 'd');
+	//printf("Product (C):\n");
+	////printMatrix(C, c_rows, c_cols, 'c');
+	//printMatrix(C, c_rows, c_cols, 'd');
 
 	//	double aveTime = totalTime / numIterations;
 	long ops = c_rows * c_cols * c_rows;
@@ -176,19 +182,19 @@ void *GetMMResponse(void *data)
 	//printf( "%d threads,\n", numThreads);
 	//printf( "%d iterations,\n", numIterations);
 	printf( "%dx%d matrix,\n", c_rows, c_cols);
-	printf( "Execution Time = %g,\n", diff);
-	//printf( "%g minRT,\n",minTime);
+	printf( "%g maxRT,\n", maxTime);
+	printf( "%g minRT,\n",minTime);
 	//printf( "%g aveRT,\n", aveTime);
-	//printf( "%g totalRT,\n", totalTime);
+	printf( "%g totalRT,\n", totalTime);
 	//printf( "%d operations per iteration,\n", ops);
 	//printf( "%g GFlop/s\n",gflops);
 
 
-//	deleteMatrix(A);
-//	deleteMatrix(B);
-//	deleteMatrix(C);
+	deleteMatrix(A);
+	deleteMatrix(B);
+	deleteMatrix(C);
 	printf("returning\n");
-}
+}*/
 
 basetype* loadMatrixFile(char* file) {
 	/*
@@ -265,7 +271,7 @@ void randomizeMatrix(basetype* mat, int rows, int cols) {
 		int c = 0;
 		for (; c < cols; c++) {
 			//mat->data[r][c] = rand() % 100;
-			mat[(r * cols) + c] = rand() % 4;
+			mat[(r * cols) + c] = rand() % 10;
 		}
 	}
 }
@@ -360,6 +366,6 @@ void deleteMatrix(basetype* mat) {
 	if (!mat)
 		return;
 
-	printf("Freeing matrix 0x%08x\n", mat);	
+	//printf("Freeing matrix 0x%08x\n", mat);	
 	free(mat);
 }
